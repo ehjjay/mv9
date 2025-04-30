@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seller Table</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #search-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+    #pagination { margin: 10px 0; }
+    #pagination button { padding: 5px 10px; margin-right: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    th { background-color: #f4f4f4; }
+    tr:nth-child(even) { background-color: #fafafa; }
+    /* Hide Seller ID and Seller Type columns */
+    th:nth-child(1), td:nth-child(1), th:nth-child(4), td:nth-child(4) { display: none; }
+    /* Column widths */
+    th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { width: 30%; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>Seller Information</h1>
+  <input type="text" id="search-input" placeholder="Search sellers..." />
+  <div id="pagination">
+    <button id="prev-btn">Prev</button>
+    <span id="page-info"></span>
+    <button id="next-btn">Next</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Seller ID</th>
+        <th>Name</th>
+        <th>Domain</th>
+        <th>Seller Type</th>
+        <th>BLinks</th>
+        <th>SiteMap</th>
+        <th>Auth</th>
+        <th>Traffic</th>
+        <th>DA</th>
+        <th>✅</th>
+        <th>🚩</th>
+        <th>❌</th>
+      </tr>
+    </thead>
+    <tbody id="seller-table-body"></tbody>
+  </table>
+  <script>
+    const pageSize = 100;
+    let sellers = [];
+    let filtered = [];
+    let currentPage = 1;
+    let statuses = {};
+    const tbody = document.getElementById('seller-table-body');
+    const searchInput = document.getElementById('search-input');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const pageInfo = document.getElementById('page-info');
+
+    function loadStatuses() {
+      try { statuses = JSON.parse(localStorage.getItem('sellerStatuses')) || {}; } catch { statuses = {}; }
+    }
+    function saveStatuses() { localStorage.setItem('sellerStatuses', JSON.stringify(statuses)); }
+    function onStatusChange(e) {
+      const { sellerId, status } = e.target.dataset;
+      if (!statuses[sellerId]) statuses[sellerId] = {};
+      statuses[sellerId][status] = e.target.checked;
+      saveStatuses();
+    }
+
+    function renderTablePage() {
+      tbody.innerHTML = '';
+      const start = (currentPage - 1) * pageSize;
+      const pageItems = filtered.slice(start, start + pageSize);
+      pageItems.forEach(seller => {
+        const row = document.createElement('tr');
+        // Hidden Seller ID cell
+        const idCell = document.createElement('td'); idCell.textContent = seller.seller_id; row.appendChild(idCell);
+        // Name cell
+        const nameCell = document.createElement('td'); nameCell.textContent = seller.name; row.appendChild(nameCell);
+        // Domain cell
+        const domainCell = document.createElement('td');
+        const domainLink = document.createElement('a');
+        domainLink.href = `https://${seller.domain}`;
+        domainLink.target = '_blank';
+        domainLink.rel = 'noopener';
+        domainLink.textContent = seller.domain;
+        domainCell.appendChild(domainLink); row.appendChild(domainCell);
+        // Hidden Seller Type cell
+        const typeCell = document.createElement('td'); typeCell.textContent = seller.seller_type; row.appendChild(typeCell);
+
+        // Action links
+        const actions = [
+          { text: 'BLinks', handler: () => window.open('https://ahrefs.com/backlink-checker/?input=' + encodeURIComponent(seller.domain) + '&mode=subdomains', '_blank') },
+          { text: 'SiteMap', handler: () => window.open('https://' + seller.domain + '/sitemap.xml', '_blank') },
+          { text: 'Auth', handler: () => window.open('https://ahrefs.com/website-authority-checker/?input=' + encodeURIComponent(`https://${seller.domain}`), '_blank') },
+          { text: 'Traffic', handler: () => window.open('https://ahrefs.com/traffic-checker/?input=' + encodeURIComponent(`https://${seller.domain}`), '_blank') },
+          { text: 'DA', handler: () => window.open('https://moz.com/domain-analysis?site=' + encodeURIComponent(`https://${seller.domain}`), '_blank') }
+        ];
+        actions.forEach(act => {
+          const td = document.createElement('td');
+          const a = document.createElement('a'); a.href = '#'; a.textContent = act.text;
+          a.addEventListener('click', e => { e.preventDefault(); act.handler(); });
+          td.appendChild(a);
+          row.appendChild(td);
+        });
+
+        // Status checkboxes
+        ['checked', 'interested', 'rejected'].forEach(key => {
+          const td = document.createElement('td');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.sellerId = seller.seller_id;
+          cb.dataset.status = key;
+          cb.checked = Boolean(statuses[seller.seller_id]?.[key]);
+          cb.addEventListener('change', onStatusChange);
+          td.appendChild(cb);
+          row.appendChild(td);
+        });
+
+        tbody.appendChild(row);
+      });
+      const totalPages = Math.ceil(filtered.length / pageSize) || 1;
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage === totalPages;
+    }
+
+    function applySearch() {
+      const q = searchInput.value.trim().toLowerCase();
+      filtered = q ? sellers.filter(s => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q)) : sellers;
+      currentPage = 1;
+      renderTablePage();
+    }
+
+    function loadSellers() {
+      loadStatuses();
+      fetch('sellers.json')
+        .then(r => r.json())
+        .then(data => { sellers = data; applySearch(); })
+        .catch(err => console.error('Error loading sellers:', err));
+    }
+
+    searchInput.addEventListener('input', () => { clearTimeout(window.searchTimer); window.searchTimer = setTimeout(applySearch, 300); });
+    prevBtn.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderTablePage(); }});
+    nextBtn.addEventListener('click', () => { const total = Math.ceil(filtered.length / pageSize); if (currentPage < total) { currentPage++; renderTablePage(); }});
+
+    loadSellers();
+  </script>
+</body>
+</html>
